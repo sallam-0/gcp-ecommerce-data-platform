@@ -1,9 +1,26 @@
 import json
+import os
 import uuid
-from pathlib import Path
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+
+try:
+    import google.auth
+except Exception as exc:  # pragma: no cover - import availability depends on runtime image
+    google = None
+    GOOGLE_AUTH_IMPORT_ERROR = exc
+else:
+    GOOGLE_AUTH_IMPORT_ERROR = None
+
+try:
+    from google.cloud import pubsub_v1
+except Exception as exc:  # pragma: no cover - import availability depends on runtime image
+    pubsub_v1 = None
+    PUBSUB_IMPORT_ERROR = exc
+else:
+    PUBSUB_IMPORT_ERROR = None
 
 from api.schemas import SearchRequest, SearchResponse
 from scrappers import (
@@ -14,8 +31,11 @@ from scrappers import (
     summarize_attempt_metrics,
 )
 
-app = FastAPI(title="E-Commerce Scraper API (Local Mode)", version="1.0.0")
+app = FastAPI(title="E-Commerce Scraper API", version="1.1.0")
 PLACEHOLDER_NULL_STRINGS = {"", "string", "none", "null"}
+PUBSUB_TOPIC_ID = os.getenv("PUBSUB_TOPIC_ID", "ecommerce-raw")
+PUBSUB_PUBLISHER = None
+PUBSUB_TOPIC_PATH: Optional[str] = None
 
 
 def _model_to_dict(model: SearchRequest) -> Dict[str, Any]:
@@ -71,6 +91,92 @@ def _resolve_target_site(request: SearchRequest) -> str:
     raise ValueError("Site is required when target URL cannot be inferred.")
 
 
+def _get_pubsub_publisher():
+    global PUBSUB_PUBLISHER
+
+    if PUBSUB_PUBLISHER is not None:
+        return PUBSUB_PUBLISHER
+
+    if PUBSUB_IMPORT_ERROR is not None or pubsub_v1 is None:
+        raise RuntimeError(
+            "google-cloud-pubsub is not installed. Install dependencies from api/requirements.txt."
+        ) from PUBSUB_IMPORT_ERROR
+
+    PUBSUB_PUBLISHER = pubsub_v1.PublisherClient()
+    return PUBSUB_PUBLISHER
+
+
+def _get_pubsub_topic_path() -> str:
+    global PUBSUB_TOPIC_PATH
+
+    if PUBSUB_TOPIC_PATH:
+        return PUBSUB_TOPIC_PATH
+
+    publisher = _get_pubsub_publisher()
+    project_id = _sanitize_optional_text(os.getenv("GCP_PROJECT_ID")) or _sanitize_optional_text(
+        os.getenv("GOOGLE_CLOUD_PROJECT")
+    )
+
+    if not project_id:
+        if GOOGLE_AUTH_IMPORT_ERROR is not None or google is None:
+            raise RuntimeError(
+                "google-auth is not installed and project ID is not set. Set GCP_PROJECT_ID/GOOGLE_CLOUD_PROJECT."
+            ) from GOOGLE_AUTH_IMPORT_ERROR
+        try:
+            _, inferred_project_id = google.auth.default()
+            project_id = _sanitize_optional_text(inferred_project_id)
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to resolve GCP project ID. Set GCP_PROJECT_ID or GOOGLE_CLOUD_PROJECT."
+            ) from exc
+
+    if not project_id:
+        raise RuntimeError("GCP project ID is empty. Set GCP_PROJECT_ID or GOOGLE_CLOUD_PROJECT.")
+
+    PUBSUB_TOPIC_PATH = publisher.topic_path(project_id, PUBSUB_TOPIC_ID)
+    return PUBSUB_TOPIC_PATH
+
+
+def _extract_payload_items(payload: Any) -> List[Dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        return [payload]
+    return []
+
+
+def _publish_to_pubsub(job_id: str, site: str, payload: Any) -> int:
+    publisher = _get_pubsub_publisher()
+    topic_path = _get_pubsub_topic_path()
+    items = _extract_payload_items(payload)
+    if not items:
+        print(f"[Job {job_id}] No records to publish to Pub/Sub.")
+        return 0
+
+    futures = []
+    published_at = datetime.now(timezone.utc).isoformat()
+
+    for item in items:
+        message_payload = dict(item)
+        message_payload["job_id"] = job_id
+        message_payload.setdefault("site", site)
+        message_payload["published_at"] = published_at
+        data_bytes = json.dumps(message_payload, ensure_ascii=False).encode("utf-8")
+
+        future = publisher.publish(
+            topic_path,
+            data=data_bytes,
+            job_id=job_id,
+            site=site,
+        )
+        futures.append(future)
+
+    for future in futures:
+        future.result()
+
+    return len(futures)
+
+
 def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
     try:
         request = SearchRequest(**_sanitize_request_payload(request_payload))
@@ -108,11 +214,7 @@ def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
         payload = result.payload
         metrics = result.attempt_metrics
 
-        data_path = Path(f"local_test_{job_id}.json")
-        metrics_path = Path(f"local_test_{job_id}_metrics.json")
-        data_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        metrics_path.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
-
+        published_count = _publish_to_pubsub(job_id=job_id, site=target_site, payload=payload)
         summary = summarize_attempt_metrics(metrics)
         if isinstance(payload, list):
             item_count = len(payload)
@@ -121,9 +223,7 @@ def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
         else:
             item_count = 0
 
-        print(f"[Job {job_id}] SUCCESS: captured {item_count} item(s).")
-        print(f"[Job {job_id}] DATA FILE: {data_path}")
-        print(f"[Job {job_id}] METRICS FILE: {metrics_path}")
+        print(f"[Job {job_id}] SUCCESS: captured {item_count} item(s), published {published_count} message(s).")
         print(f"[Job {job_id}] ATTEMPTS: {len(summary['attempts'])}")
 
     except Exception as exc:
@@ -146,6 +246,7 @@ async def trigger_scrape(request: SearchRequest, background_tasks: BackgroundTas
             proxy_file=normalized_request.proxy_file,
             proxy_scheme=normalized_request.proxy_scheme,
         )
+        _get_pubsub_topic_path()
 
         job_id = str(uuid.uuid4())
         background_tasks.add_task(run_scraper_locally, job_id, normalized_payload)
@@ -153,7 +254,7 @@ async def trigger_scrape(request: SearchRequest, background_tasks: BackgroundTas
         return SearchResponse(
             job_id=job_id,
             status="accepted",
-            message=f"Local scraping job started for {target_site} with target '{target_value}'.",
+            message=f"Scraping job accepted for {target_site} with target '{target_value}'. Results will be published to Pub/Sub topic '{PUBSUB_TOPIC_ID}'.",
         )
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
