@@ -1,0 +1,86 @@
+{
+  "amazon": [
+    {
+      "attempt": 1,
+      "site": "amazon",
+      "entry_proxy": "direct",
+      "session_stats": {
+        "requests_total": 1,
+        "responses_ok": 1,
+        "responses_non_200": 0,
+        "network_errors": 0,
+        "captcha_blocks": 0,
+        "last_status_code": 200,
+        "success_rate": 1.0,
+        "captcha_rate": 0.0,
+        "proxy_stats": {
+          "direct": {
+            "requests": 1,
+            "successes": 1,
+            "non_200": 0,
+            "network_errors": 0,
+            "captcha_blocks": 0,
+            "success_rate": 1.0,
+            "captcha_rate": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "noon": [
+    {
+      "attempt": 1,
+      "site": "noon",
+      "entry_proxy": "direct",
+      "session_stats": {
+        "requests_total": 1,
+        "responses_ok": 1,
+        "responses_non_200": 0,
+        "network_errors": 0,
+        "captcha_blocks": 0,
+        "last_status_code": 200,
+        "success_rate": 1.0,
+        "captcha_rate": 0.0,
+        "proxy_stats": {
+          "direct": {
+            "requests": 1,
+            "successes": 1,
+            "non_200": 0,
+            "network_errors": 0,
+            "captcha_blocks": 0,
+            "success_rate": 1.0,
+            "captcha_rate": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "jumia": [
+    {
+      "attempt": 1,
+      "site": "jumia",
+      "entry_proxy": "direct",
+      "session_stats": {
+        "requests_total": 4,
+        "responses_ok": 0,
+        "responses_non_200": 0,
+        "network_errors": 0,
+        "captcha_blocks": 4,
+        "last_status_code": 200,
+        "success_rate": 0.0,
+        "captcha_rate": 1.0,
+        "proxy_stats": {
+          "direct": {
+            "requests": 4,
+            "successes": 0,
+            "non_200": 0,
+            "network_errors": 0,
+            "captcha_blocks": 4,
+            "success_rate": 0.0,
+            "captcha_rate": 1.0
+          }
+        }
+      }
+    }
+  ]
+}

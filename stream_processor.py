@@ -1,10 +1,12 @@
 import json
 import logging
 import os
+import inspect
 from pathlib import Path
 
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
+from apache_beam.transforms.window import FixedWindows
 
 
 def load_dotenv(env_path: str = ".env") -> None:
@@ -62,6 +64,7 @@ def run():
     bq_table_name = get_required_env("BQ_TABLE")
     gcs_temp_location = get_required_env("DATAFLOW_TEMP_LOCATION")
     gcs_staging_location = get_required_env("DATAFLOW_STAGING_LOCATION")
+    data_lake = get_required_env("DATAFLOW_DATA_LAKE")
     runner = get_required_env("DATAFLOW_RUNNER")
     service_account_email = get_required_env("DATAFLOW_SERVICE_ACCOUNT")
     worker_zone = get_required_env("DATAFLOW_WORKER_ZONE")
@@ -83,15 +86,38 @@ def run():
 
     # 4. Build the Pipeline
     with beam.Pipeline(options=options) as p:
-        (
-            p
-            | "Read from PubSub" >> beam.io.ReadFromPubSub(subscription=subscription)
+        messages = p | "Read from PubSub" >> beam.io.ReadFromPubSub(subscription=subscription)
+
+        def _write_to_text(path: str) -> beam.PTransform:
+            kwargs = {
+                "file_name_suffix": ".json",
+                "num_shards": 1,
+                "shard_name_template": "-W-P-SS-of-NN",
+            }
+
+            sig = inspect.signature(beam.io.WriteToText)
+            if "with_windowed_writes" in sig.parameters:
+                kwargs["with_windowed_writes"] = True
+            elif "windowed_writes" in sig.parameters:
+                kwargs["windowed_writes"] = True
+
+            return beam.io.WriteToText(path, **kwargs)
+
+        _ = (
+            messages
             | "Format for BQ" >> beam.ParDo(FormatForBigQuery())
             | "Write to BigQuery" >> beam.io.WriteToBigQuery(
                 table=bq_table,
                 write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
                 create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
             )
+        )
+
+        _ = (
+            messages
+            | "Decode Bytes" >> beam.Map(lambda x: x.decode("utf-8"))
+            | "Window 5m" >> beam.WindowInto(FixedWindows(300))
+            | "Write to GCS Lake" >> _write_to_text(data_lake)
         )
 
 if __name__ == "__main__":

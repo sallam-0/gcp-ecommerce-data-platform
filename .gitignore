@@ -4,3 +4,9 @@
 
 __pycache__/
 *.py[cod]
+
+# dbt artifacts
+ecommerce_transform/target/
+ecommerce_transform/dbt_packages/
+ecommerce_transform/logs/
+logs/

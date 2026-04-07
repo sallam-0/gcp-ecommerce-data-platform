@@ -183,13 +183,14 @@ def normalize_product_schema(product: Dict[str, Any], site: str) -> Dict[str, An
     if site == "amazon":
         asin = normalized.get("asin") or normalized.get("product_id")
         if asin:
-            normalized["asin"] = asin
             normalized["product_id"] = asin
     else:
         product_id = normalized.get("product_id") or normalized.get("sku") or normalized.get("id")
         if product_id:
             normalized["product_id"] = product_id
-        normalized.setdefault("asin", None)
+
+    # Normalize away legacy asin field for all sites.
+    normalized.pop("asin", None)
 
     if "title_raw" not in normalized and isinstance(normalized.get("title"), str):
         normalized["title_raw"] = normalized["title"]

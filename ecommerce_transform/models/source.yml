@@ -1,0 +1,7 @@
+sources:
+  - name: raw_data
+    database: e-commerce-492314  # Replace with your actual Project ID
+    schema: ecommerce_prod
+    tables:
+      - name: raw_scrapes
+        description: "Raw JSON payloads streamed directly from Dataflow"
