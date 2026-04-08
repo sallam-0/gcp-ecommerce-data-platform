@@ -1,6 +1,8 @@
 {{ config(
     materialized='incremental',
+    incremental_strategy='merge',
     unique_key='product_url',
+    merge_update_columns=['product_id','product_name','site','current_price','rating','published_at','job_id'],
     on_schema_change='sync'
 ) }}
 
@@ -9,7 +11,10 @@ WITH new_staging_data AS (
     
     -- This magic block ensures we only process data that arrived AFTER our last dbt run
     {% if is_incremental() %}
-        WHERE published_at > (SELECT MAX(published_at) FROM {{ this }})
+        WHERE published_at > COALESCE(
+            (SELECT MAX(published_at) FROM {{ this }}),
+            TIMESTAMP('1970-01-01')
+        )
     {% endif %}
 ),
 
