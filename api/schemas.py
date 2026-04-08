@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,3 +35,4 @@ class SearchResponse(BaseModel):
     job_id: str
     status: str
     message: str
+    best_match: Optional[Dict[str, Any]] = None

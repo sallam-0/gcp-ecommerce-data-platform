@@ -22,6 +22,14 @@ except Exception as exc:  # pragma: no cover - import availability depends on ru
 else:
     PUBSUB_IMPORT_ERROR = None
 
+try:
+    from google.cloud import bigquery
+except Exception as exc:  # pragma: no cover - import availability depends on runtime image
+    bigquery = None
+    BIGQUERY_IMPORT_ERROR = exc
+else:
+    BIGQUERY_IMPORT_ERROR = None
+
 from api.schemas import SearchRequest, SearchResponse
 from scrappers import (
     ScrapeJobConfig,
@@ -36,6 +44,11 @@ PLACEHOLDER_NULL_STRINGS = {"", "string", "none", "null"}
 PUBSUB_TOPIC_ID = os.getenv("PUBSUB_TOPIC_ID", "ecommerce-raw")
 PUBSUB_PUBLISHER = None
 PUBSUB_TOPIC_PATH: Optional[str] = None
+
+BQ_CLIENT = None
+BQ_PROJECT_ID = os.getenv("BQ_PROJECT_ID") or os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+BQ_DATASET = os.getenv("BQ_DATASET", "ecommerce_prod")
+BQ_TABLE = os.getenv("BQ_TABLE", "mart_best_price")
 
 
 def _model_to_dict(model: SearchRequest) -> Dict[str, Any]:
@@ -104,6 +117,20 @@ def _get_pubsub_publisher():
 
     PUBSUB_PUBLISHER = pubsub_v1.PublisherClient()
     return PUBSUB_PUBLISHER
+
+
+def _get_bigquery_client():
+    global BQ_CLIENT
+    if BQ_CLIENT is not None:
+        return BQ_CLIENT
+
+    if BIGQUERY_IMPORT_ERROR is not None or bigquery is None:
+        raise RuntimeError(
+            "google-cloud-bigquery is not installed. Install dependencies from api/requirements.txt."
+        ) from BIGQUERY_IMPORT_ERROR
+
+    BQ_CLIENT = bigquery.Client()
+    return BQ_CLIENT
 
 
 def _get_pubsub_topic_path() -> str:
@@ -177,6 +204,36 @@ def _publish_to_pubsub(job_id: str, site: str, payload: Any) -> int:
     return len(futures)
 
 
+def _get_cached_best_match(search_term: str) -> Optional[Dict[str, Any]]:
+    if not search_term:
+        return None
+
+    client = _get_bigquery_client()
+    if not BQ_PROJECT_ID:
+        raise RuntimeError("BQ_PROJECT_ID (or GCP_PROJECT_ID) is not set.")
+
+    query = f"""
+        SELECT product_url, product_name, current_price, rating
+        FROM `{BQ_PROJECT_ID}.{BQ_DATASET}.{BQ_TABLE}`
+        WHERE LOWER(product_name) LIKE @search_term
+        AND published_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+        ORDER BY current_price ASC
+        LIMIT 1
+    """
+
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("search_term", "STRING", f"%{search_term.lower()}%")
+        ]
+    )
+
+    query_job = client.query(query, job_config=job_config)
+    rows = list(query_job)
+    if not rows:
+        return None
+    return dict(rows[0])
+
+
 def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
     try:
         request = SearchRequest(**_sanitize_request_payload(request_payload))
@@ -247,6 +304,22 @@ async def trigger_scrape(request: SearchRequest, background_tasks: BackgroundTas
             proxy_scheme=normalized_request.proxy_scheme,
         )
         _get_pubsub_topic_path()
+
+        # Cache check in BigQuery (best-effort).
+        if target_value:
+            try:
+                best_match = _get_cached_best_match(target_value)
+            except Exception as exc:
+                print(f"Warning: BigQuery cache check failed: {exc}")
+                best_match = None
+
+            if best_match:
+                return SearchResponse(
+                    job_id="cached-result",
+                    status="completed",
+                    message="Found fresh data in historical cache.",
+                    best_match=best_match,
+                )
 
         job_id = str(uuid.uuid4())
         background_tasks.add_task(run_scraper_locally, job_id, normalized_payload)
