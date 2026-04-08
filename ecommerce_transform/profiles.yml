@@ -1,0 +1,13 @@
+ecommerce_transform:
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('DBT_PROJECT_ID') }}"
+      dataset: "{{ env_var('DBT_DATASET') }}"
+      location: "{{ env_var('DBT_LOCATION') }}"
+      threads: 1
+      job_retries: 1
+      job_execution_timeout_seconds: 300
+      priority: interactive
+  target: dev
