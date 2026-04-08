@@ -46,9 +46,9 @@ PUBSUB_PUBLISHER = None
 PUBSUB_TOPIC_PATH: Optional[str] = None
 
 BQ_CLIENT = None
-BQ_PROJECT_ID = os.getenv("BQ_PROJECT_ID") or os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
-BQ_DATASET = os.getenv("BQ_DATASET", "ecommerce_prod")
-BQ_TABLE = os.getenv("BQ_TABLE", "mart_best_price")
+BQ_PROJECT_ID = None
+BQ_DATASET = None
+BQ_TABLE = None
 
 
 def _model_to_dict(model: SearchRequest) -> Dict[str, Any]:
@@ -209,6 +209,16 @@ def _get_cached_best_match(search_term: str) -> Optional[Dict[str, Any]]:
         return None
 
     client = _get_bigquery_client()
+    global BQ_PROJECT_ID, BQ_DATASET, BQ_TABLE
+    if BQ_PROJECT_ID is None:
+        BQ_PROJECT_ID = _sanitize_optional_text(
+            os.getenv("BQ_PROJECT_ID") or os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+        )
+    if BQ_DATASET is None:
+        BQ_DATASET = _sanitize_optional_text(os.getenv("BQ_DATASET")) or "ecommerce_prod"
+    if BQ_TABLE is None:
+        BQ_TABLE = _sanitize_optional_text(os.getenv("BQ_TABLE")) or "mart_best_price"
+
     if not BQ_PROJECT_ID:
         raise RuntimeError("BQ_PROJECT_ID (or GCP_PROJECT_ID) is not set.")
 
