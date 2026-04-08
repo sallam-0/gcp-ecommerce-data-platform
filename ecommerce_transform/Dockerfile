@@ -7,5 +7,5 @@ WORKDIR /usr/app/
 # Copy your dbt project files into the container
 COPY . .
 
-# Set the default command to run your models
-CMD ["dbt", "run", "--profiles-dir", ".", "--project-dir", "."]
+# Set the default command to run your models (dbt is the image entrypoint)
+CMD ["run", "--profiles-dir", ".", "--project-dir", "."]
