@@ -258,6 +258,16 @@ def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
             proxy_scheme=request.proxy_scheme,
         )
 
+        max_retries = request.max_retries
+        request_timeout = request.request_timeout
+        min_delay = request.min_delay
+        max_delay = request.max_delay
+        if request.fast_mode:
+            max_retries = min(max_retries, 1)
+            request_timeout = min(request_timeout, 12)
+            min_delay = min(min_delay, 0.6)
+            max_delay = min(max_delay, 1.2)
+
         job = ScrapeJobConfig(
             site=target_site,
             query=request.query,
@@ -270,10 +280,10 @@ def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
             max_products=request.max_products,
             max_proxy_attempts=request.max_proxy_attempts,
             rotate_every=request.rotate_every,
-            max_retries=request.max_retries,
-            request_timeout=request.request_timeout,
-            min_delay=request.min_delay,
-            max_delay=request.max_delay,
+            max_retries=max_retries,
+            request_timeout=request_timeout,
+            min_delay=min_delay,
+            max_delay=max_delay,
             proxy_pool=proxy_pool,
         )
 
@@ -324,12 +334,14 @@ async def trigger_scrape(request: SearchRequest, background_tasks: BackgroundTas
                 best_match = None
 
             if best_match:
+                print(f"Cache HIT for '{target_value}'. Returning BigQuery result.")
                 return SearchResponse(
                     job_id="cached-result",
                     status="completed",
                     message="Found fresh data in historical cache.",
                     best_match=best_match,
                 )
+            print(f"Cache MISS for '{target_value}'. Proceeding to scrape.")
 
         job_id = str(uuid.uuid4())
         background_tasks.add_task(run_scraper_locally, job_id, normalized_payload)
@@ -337,7 +349,11 @@ async def trigger_scrape(request: SearchRequest, background_tasks: BackgroundTas
         return SearchResponse(
             job_id=job_id,
             status="accepted",
-            message=f"Scraping job accepted for {target_site} with target '{target_value}'. Results will be published to Pub/Sub topic '{PUBSUB_TOPIC_ID}'.",
+            message=(
+                f"Scraping job accepted for {target_site} with target '{target_value}'. "
+                f"Results will be published to Pub/Sub topic '{PUBSUB_TOPIC_ID}'. "
+                "This is an async job and may take several minutes."
+            ),
         )
     except (ValueError, FileNotFoundError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

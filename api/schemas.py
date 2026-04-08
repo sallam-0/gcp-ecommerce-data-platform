@@ -29,6 +29,7 @@ class SearchRequest(BaseModel):
     request_timeout: int = Field(default=25, ge=1, description="Request timeout in seconds.")
     min_delay: float = Field(default=2.5, gt=0, description="Minimum delay between requests.")
     max_delay: float = Field(default=4.0, gt=0, description="Maximum delay between requests.")
+    fast_mode: bool = Field(default=False, description="Reduce retries and delays for faster responses.")
 
 
 class SearchResponse(BaseModel):
