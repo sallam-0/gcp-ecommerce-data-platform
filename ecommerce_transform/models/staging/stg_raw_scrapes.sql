@@ -22,6 +22,10 @@ SELECT
         JSON_EXTRACT_SCALAR(raw_payload, '$.product_url'),
         JSON_EXTRACT_SCALAR(raw_payload, '$.url')
     ) AS product_url,
+    COALESCE(
+        JSON_EXTRACT_SCALAR(raw_payload, '$.image_url'),
+        JSON_EXTRACT_SCALAR(raw_payload, '$.img_url')
+    ) AS image_url,
     
     -- Clean the price (e.g., if it comes as "EGP 450", you might need to use REPLACE to remove "EGP")
     CAST(JSON_EXTRACT_SCALAR(raw_payload, '$.price') AS FLOAT64) AS current_price,

@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='merge',
     unique_key='product_url',
-    merge_update_columns=['product_id','product_name','site','current_price','rating','published_at','job_id'],
+    merge_update_columns=['product_id','product_name','product_url','image_url','site','current_price','rating','published_at','job_id'],
     on_schema_change='sync'
 ) }}
 
@@ -37,6 +37,7 @@ deduplicated_new_data AS (
 SELECT 
     product_id,
     product_url,
+    image_url,
     product_name,
     site,
     current_price,

@@ -35,6 +35,7 @@ from scrappers import (
     ScrapeJobConfig,
     infer_site_from_url,
     load_proxies,
+    resolve_sites,
     run_with_proxy_fallback,
     summarize_attempt_metrics,
 )
@@ -90,16 +91,24 @@ def _sanitize_request_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def _resolve_target_site(request: SearchRequest) -> str:
+def _resolve_target_sites(request: SearchRequest) -> List[str]:
+    if request.site == "all":
+        if request.query:
+            return resolve_sites(["all"])
+        inferred = infer_site_from_url(request.search_url or request.product_url or "")
+        if inferred:
+            return [inferred]
+        raise ValueError("site='all' is only supported for query mode, or URLs with a clearly inferable site.")
+
     if request.site:
-        return request.site
+        return [request.site]
 
     inferred_site = infer_site_from_url(request.search_url or request.product_url or "")
     if inferred_site:
-        return inferred_site
+        return [inferred_site]
 
     if request.query:
-        return "amazon"
+        return ["amazon"]
 
     raise ValueError("Site is required when target URL cannot be inferred.")
 
@@ -223,7 +232,7 @@ def _get_cached_best_match(search_term: str) -> Optional[Dict[str, Any]]:
         raise RuntimeError("BQ_PROJECT_ID (or GCP_PROJECT_ID) is not set.")
 
     query = f"""
-        SELECT product_url, product_name, current_price, rating
+        SELECT product_url, product_name, current_price, rating, image_url
         FROM `{BQ_PROJECT_ID}.{BQ_DATASET}.{BQ_TABLE}`
         WHERE LOWER(product_name) LIKE @search_term
         AND published_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
@@ -248,9 +257,9 @@ def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
     try:
         request = SearchRequest(**_sanitize_request_payload(request_payload))
         _validate_target_mode(request)
-        target_site = _resolve_target_site(request)
+        target_sites = _resolve_target_sites(request)
         target_value = request.product_url or request.search_url or request.query
-        print(f"\n[Job {job_id}] STARTING: target={target_value!r}, site={target_site}")
+        print(f"\n[Job {job_id}] STARTING: target={target_value!r}, sites={target_sites}")
 
         proxy_pool = load_proxies(
             proxy=request.proxy,
@@ -268,40 +277,54 @@ def run_scraper_locally(job_id: str, request_payload: Dict[str, Any]) -> None:
             min_delay = min(min_delay, 0.6)
             max_delay = min(max_delay, 1.2)
 
-        job = ScrapeJobConfig(
-            site=target_site,
-            query=request.query,
-            search_url=request.search_url,
-            product_url=request.product_url,
-            country_code=request.country_code,
-            locale=request.locale,
-            impersonate=request.impersonate,
-            max_pages=request.max_pages,
-            max_products=request.max_products,
-            max_proxy_attempts=request.max_proxy_attempts,
-            rotate_every=request.rotate_every,
-            max_retries=max_retries,
-            request_timeout=request_timeout,
-            min_delay=min_delay,
-            max_delay=max_delay,
-            proxy_pool=proxy_pool,
+        total_items = 0
+        total_published = 0
+        total_attempts = 0
+        for target_site in target_sites:
+            job = ScrapeJobConfig(
+                site=target_site,
+                query=request.query,
+                search_url=request.search_url,
+                product_url=request.product_url,
+                country_code=request.country_code,
+                locale=request.locale,
+                impersonate=request.impersonate,
+                max_pages=request.max_pages,
+                max_products=request.max_products,
+                max_proxy_attempts=request.max_proxy_attempts,
+                rotate_every=request.rotate_every,
+                max_retries=max_retries,
+                request_timeout=request_timeout,
+                min_delay=min_delay,
+                max_delay=max_delay,
+                proxy_pool=proxy_pool,
+            )
+
+            result = run_with_proxy_fallback(job)
+            payload = result.payload
+            metrics = result.attempt_metrics
+            summary = summarize_attempt_metrics(metrics)
+
+            published_count = _publish_to_pubsub(job_id=job_id, site=target_site, payload=payload)
+            if isinstance(payload, list):
+                item_count = len(payload)
+            elif isinstance(payload, dict) and payload:
+                item_count = 1
+            else:
+                item_count = 0
+
+            total_items += item_count
+            total_published += published_count
+            total_attempts += len(summary["attempts"])
+            print(
+                f"[Job {job_id}] {target_site} SUCCESS: captured {item_count} item(s), "
+                f"published {published_count} message(s), attempts={len(summary['attempts'])}"
+            )
+
+        print(
+            f"[Job {job_id}] SUCCESS: sites={target_sites}, captured {total_items} item(s), "
+            f"published {total_published} message(s), attempts={total_attempts}"
         )
-
-        result = run_with_proxy_fallback(job)
-        payload = result.payload
-        metrics = result.attempt_metrics
-
-        published_count = _publish_to_pubsub(job_id=job_id, site=target_site, payload=payload)
-        summary = summarize_attempt_metrics(metrics)
-        if isinstance(payload, list):
-            item_count = len(payload)
-        elif isinstance(payload, dict) and payload:
-            item_count = 1
-        else:
-            item_count = 0
-
-        print(f"[Job {job_id}] SUCCESS: captured {item_count} item(s), published {published_count} message(s).")
-        print(f"[Job {job_id}] ATTEMPTS: {len(summary['attempts'])}")
 
     except Exception as exc:
         print(f"[Job {job_id}] FAILED: {exc}")
@@ -314,7 +337,7 @@ async def trigger_scrape(request: SearchRequest, background_tasks: BackgroundTas
         normalized_request = SearchRequest(**normalized_payload)
 
         _validate_target_mode(normalized_request)
-        target_site = _resolve_target_site(normalized_request)
+        target_sites = _resolve_target_sites(normalized_request)
         target_value = normalized_request.product_url or normalized_request.search_url or normalized_request.query
 
         # Validate proxy configuration up front so bad input returns 422 immediately.
@@ -350,7 +373,7 @@ async def trigger_scrape(request: SearchRequest, background_tasks: BackgroundTas
             job_id=job_id,
             status="accepted",
             message=(
-                f"Scraping job accepted for {target_site} with target '{target_value}'. "
+                f"Scraping job accepted for sites {target_sites} with target '{target_value}'. "
                 f"Results will be published to Pub/Sub topic '{PUBSUB_TOPIC_ID}'. "
                 "This is an async job and may take several minutes."
             ),

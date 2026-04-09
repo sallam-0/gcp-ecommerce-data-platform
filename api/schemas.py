@@ -4,9 +4,9 @@ from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
-    site: Optional[Literal["amazon", "jumia", "noon"]] = Field(
+    site: Optional[Literal["amazon", "jumia", "noon", "all"]] = Field(
         default=None,
-        description="Target site. Optional when using product_url/search_url because it can be inferred.",
+        description="Target site. Use 'all' for query mode across all supported sites.",
     )
     query: Optional[str] = Field(default=None, description="Search query text mode.")
     search_url: Optional[str] = Field(default=None, description="Direct search URL mode.")
