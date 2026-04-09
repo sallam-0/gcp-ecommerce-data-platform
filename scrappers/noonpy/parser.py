@@ -69,7 +69,12 @@ def parse_product_page(html_content: str, url: str = None, locale: str = "egypt-
     return data
 
 
-def parse_search_page(html_content: str, base_url: str = None, locale: str = "egypt-en") -> List[Dict[str, Any]]:
+def parse_search_page(
+    html_content: str,
+    base_url: str = None,
+    locale: str = "egypt-en",
+    max_products: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     if not html_content:
         print("Error: Received empty HTML content for Noon search page")
         return []
@@ -88,6 +93,8 @@ def parse_search_page(html_content: str, base_url: str = None, locale: str = "eg
         if product["product_id"] not in seen_ids:
             results.append(product)
             seen_ids.add(product["product_id"])
+            if max_products and max_products > 0 and len(results) >= max_products:
+                return results
 
     next_data = _extract_next_data(soup)
     if next_data:
@@ -99,6 +106,8 @@ def parse_search_page(html_content: str, base_url: str = None, locale: str = "eg
                 continue
             results.append(product)
             seen_ids.add(product["product_id"])
+            if max_products and max_products > 0 and len(results) >= max_products:
+                return results
 
     if not results:
         for anchor in soup.select("a[href*='/p/']"):
@@ -132,6 +141,8 @@ def parse_search_page(html_content: str, base_url: str = None, locale: str = "eg
             _enrich_product_from_text_blob(product, title)
             results.append(product)
             seen_ids.add(product_id)
+            if max_products and max_products > 0 and len(results) >= max_products:
+                return results
 
     return results
 

@@ -79,7 +79,12 @@ def parse_product_page(html_content: str, url: str = None, domain: str = "com.eg
     return data
 
 
-def parse_search_page(html_content: str, base_url: str = None, domain: str = "com.eg") -> List[Dict[str, Any]]:
+def parse_search_page(
+    html_content: str,
+    base_url: str = None,
+    domain: str = "com.eg",
+    max_products: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     if not html_content:
         print("Error: Received empty HTML content for Jumia search page")
         return []
@@ -100,6 +105,8 @@ def parse_search_page(html_content: str, base_url: str = None, domain: str = "co
         if product_id and product_id not in seen_ids:
             results.append(product)
             seen_ids.add(product_id)
+            if max_products and max_products > 0 and len(results) >= max_products:
+                return results
 
     state_payload = _extract_state_payload(soup)
     if state_payload:
@@ -112,6 +119,8 @@ def parse_search_page(html_content: str, base_url: str = None, domain: str = "co
                 continue
             results.append(product)
             seen_ids.add(product_id)
+            if max_products and max_products > 0 and len(results) >= max_products:
+                return results
 
     for card in soup.select("article.prd, article[class*='prd']"):
         product = _build_search_product_from_card(card, resolved_base, active_domain)
@@ -122,6 +131,8 @@ def parse_search_page(html_content: str, base_url: str = None, domain: str = "co
             continue
         results.append(product)
         seen_ids.add(product_id)
+        if max_products and max_products > 0 and len(results) >= max_products:
+            return results
 
     if not results:
         for anchor in soup.select("a[href*='.html'], a[href*='/catalog/productspecifications/sku/']"):
@@ -133,6 +144,8 @@ def parse_search_page(html_content: str, base_url: str = None, domain: str = "co
                 continue
             results.append(product)
             seen_ids.add(product_id)
+            if max_products and max_products > 0 and len(results) >= max_products:
+                return results
 
     return results
 

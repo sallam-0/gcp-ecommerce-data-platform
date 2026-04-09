@@ -84,7 +84,7 @@ class BaseEcommerceScraper(ABC):
                 print(f"Failed to fetch search page: {current_url}")
                 break
 
-            products = self.parse_search_html(response.text)
+            products = self.parse_search_html(response.text, max_products=max_products)
             if not products:
                 print(f"No products found on page {current_page} (or page was blocked)")
                 break
@@ -128,7 +128,7 @@ class BaseEcommerceScraper(ABC):
         """Parse product page HTML."""
 
     @abstractmethod
-    def parse_search_html(self, html_content: str) -> List[Dict[str, Any]]:
+    def parse_search_html(self, html_content: str, max_products: Optional[int] = None) -> List[Dict[str, Any]]:
         """Parse search page HTML."""
 
     @abstractmethod

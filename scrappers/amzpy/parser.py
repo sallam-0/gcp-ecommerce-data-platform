@@ -194,7 +194,12 @@ def parse_product_page(html_content: str, url: str = None, country_code: str = N
         return None
 
 
-def parse_search_page(html_content: str, base_url: str = None, country_code: str = None) -> List[Dict]:
+def parse_search_page(
+    html_content: str,
+    base_url: str = None,
+    country_code: str = None,
+    max_products: Optional[int] = None,
+) -> List[Dict]:
     """
     Parse Amazon search results page HTML and extract product listings.
     
@@ -495,63 +500,11 @@ def parse_search_page(html_content: str, base_url: str = None, country_code: str
                 
                 product_data['prime'] = any(container.select_one(selector) for selector in prime_selectors)
                 
-                # Extract color variants if available
-                color_variants = []
-                color_swatches = container.select('.s-color-swatch-outer-circle')
-                
-                if color_swatches:
-                    for swatch in color_swatches:
-                        color_link = swatch.select_one('a')
-                        if color_link:
-                            color_name = color_link.get('aria-label', '')
-                            color_url = color_link.get('href', '')
-                            color_asin = None
-                            
-                            # Try to extract ASIN from URL
-                            if color_url:
-                                color_asin = extract_asin(color_url)
-                                
-                            if color_name:
-                                if color_url.startswith('/'):
-                                    color_url = urljoin(base_url, color_url) if base_url else color_url
-                                
-                                # Format the canonical URL for color variant
-                                canonical_color_url = format_canonical_url(color_url, color_asin, country_code) if color_asin else color_url
-                                
-                                color_variants.append({
-                                    'name': color_name,
-                                    'url': canonical_color_url,
-                                    'asin': color_asin
-                                })
-                
-                if color_variants:
-                    product_data['color_variants'] = color_variants
-                
-                # Extract "Amazon's Choice" or "Best Seller" badges
-                badge_text = None
-                badge_element = container.select_one('.a-badge-text') or container.select_one('[aria-label*="Choice"]')
-                if badge_element:
-                    badge_text = badge_element.text.strip()
-                    if not badge_text and badge_element.get('aria-label'):
-                        badge_text = badge_element.get('aria-label')
-                    
-                    if badge_text:
-                        product_data['badge'] = badge_text
-                
-                # Extract delivery information
-                delivery_element = container.select_one('.a-row:-soup-contains("delivery")') or container.select_one('[aria-label*="delivery"]')
-                if delivery_element:
-                    delivery_text = delivery_element.text.strip()
-                    product_data['delivery_info'] = delivery_text
-                
-                # Extract "Deal" information
-                deal_element = container.select_one('span:-soup-contains("Deal")') or container.select_one('.a-badge:-soup-contains("Deal")')
-                if deal_element:
-                    product_data['deal'] = True
-                
                 # Add the product to our results list if we have the key information
                 if product_data.get('title') and product_data.get('asin'):
                     results.append(product_data)
+                    if max_products and max_products > 0 and len(results) >= max_products:
+                        break
                 
             except Exception as e:
                 print(f"Error parsing individual search result: {e}")

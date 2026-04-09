@@ -52,11 +52,12 @@ class AmazonScraper(BaseEcommerceScraper):
     def parse_product_html(self, html_content: str, url: str) -> Optional[Dict[str, Any]]:
         return parse_product_page(html_content=html_content, url=url, country_code=self.country_code)
 
-    def parse_search_html(self, html_content: str) -> List[Dict[str, Any]]:
+    def parse_search_html(self, html_content: str, max_products: Optional[int] = None) -> List[Dict[str, Any]]:
         return parse_search_page(
             html_content,
             self.site_base_url(),
             country_code=self.country_code,
+            max_products=max_products,
         )
 
     def parse_next_page_url(self, html_content: str) -> Optional[str]:
