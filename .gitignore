@@ -10,3 +10,5 @@ ecommerce_transform/target/
 ecommerce_transform/dbt_packages/
 ecommerce_transform/logs/
 logs/
+generated_data/
+scripts/
