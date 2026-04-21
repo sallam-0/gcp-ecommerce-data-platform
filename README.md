@@ -1,4 +1,3 @@
-<![CDATA[<div align="center">
 
 # GCP E-Commerce Data Platform
 
@@ -64,11 +63,11 @@ This platform solves a real-world problem: **comparing product prices and metada
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CLIENT REQUEST                                  │
-│                         POST /search (FastAPI)                               │
+│                              CLIENT REQUEST                                 │
+│                         POST /search (FastAPI)                              │
 └────────────────────────────────┬────────────────────────────────────────────┘
                                  │
-                    ┌────────────▼────────────┐
+                    ┌────────────▼─────────────┐
                     │    BigQuery Cache Check  │
                     │   (mart_best_price)      │
                     └────┬──────────────┬──────┘
@@ -77,30 +76,30 @@ This platform solves a real-world problem: **comparing product prices and metada
                     (return)            │
                                         │
           ┌─────────────────────────────▼──────────────────────────────┐
-          │               SCRAPER ENGINE (Background Task)              │
+          │               SCRAPER ENGINE (Background Task)             │
           │  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
           │  │ Amazon   │  │  Noon    │  │  Jumia   │                  │
           │  │ (amzpy)  │  │ (noonpy) │  │(jumiapy) │                  │
           │  └────┬─────┘  └────┬─────┘  └────┬─────┘                  │
           │       └─────────────┼─────────────┘                        │
-          │                     │                                       │
-          │          Schema Normalization                                │
-          │          (service.py)                                        │
+          │                     │                                      │
+          │          Schema Normalization                              │
+          │          (service.py)                                      │
           └─────────────────────┬──────────────────────────────────────┘
                                 │
                     ┌───────────▼───────────┐
-                    │   Google Cloud Pub/Sub │
-                    │   (ecommerce-raw)      │
+                    │   Google Cloud Pub/Sub│
+                    │   (ecommerce-raw)     │
                     └───────────┬───────────┘
                                 │
               ┌─────────────────▼──────────────────┐
-              │   Apache Beam / Dataflow Pipeline    │
-              │        (stream_processor.py)          │
-              └──────┬────────────────────┬──────────┘
+              │   Apache Beam / Dataflow Pipeline  │
+              │        (stream_processor.py)       │
+              └──────┬────────────────────┬────────┘
                      │                    │
           ┌──────────▼──────────┐  ┌──────▼───────────────┐
-          │   BigQuery          │  │   GCS Data Lake       │
-          │   raw_scrapes       │  │   (windowed JSON)     │
+          │   BigQuery          │  │   GCS Data Lake      │
+          │   raw_scrapes       │  │   (windowed JSON)    │
           └──────────┬──────────┘  └──────────────────────┘
                      │
           ┌──────────▼──────────┐
@@ -727,9 +726,3 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ---
 
-<div align="center">
-
-**Built with ❤️ on Google Cloud Platform**
-
-</div>
-]]>
